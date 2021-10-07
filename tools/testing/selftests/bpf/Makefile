@@ -207,7 +207,7 @@ $(DEFAULT_BPFTOOL): $(wildcard $(BPFTOOLDIR)/*.[ch] $(BPFTOOLDIR)/Makefile)    \
 		    CC=$(HOSTCC) LD=$(HOSTLD)				       \
 		    EXTRA_CFLAGS='-g -O0'				       \
 		    OUTPUT=$(HOST_BUILD_DIR)/bpftool/			       \
-		    prefix= DESTDIR=$(HOST_SCRATCH_DIR)/ install
+		    prefix= DESTDIR=$(HOST_SCRATCH_DIR)/ install-bin
 
 all: docs
 
