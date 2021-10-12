@@ -24,11 +24,12 @@ static const char * const btf_kind_str_mapping[] = {
 	[BTF_KIND_VAR]		= "VAR",
 	[BTF_KIND_DATASEC]	= "DATASEC",
 	[BTF_KIND_FLOAT]	= "FLOAT",
+	[BTF_KIND_DECL_TAG]	= "DECL_TAG",
 };
 
 static const char *btf_kind_str(__u16 kind)
 {
-	if (kind > BTF_KIND_DATASEC)
+	if (kind > BTF_KIND_DECL_TAG)
 		return "UNKNOWN";
 	return btf_kind_str_mapping[kind];
 }
@@ -177,6 +178,10 @@ int fprintf_btf_type_raw(FILE *out, const struct btf *btf, __u32 id)
 	case BTF_KIND_FLOAT:
 		fprintf(out, " size=%u", t->size);
 		break;
+	case BTF_KIND_DECL_TAG:
+		fprintf(out, " type_id=%u component_idx=%d",
+			t->type, btf_decl_tag(t)->component_idx);
+		break;
 	default:
 		break;
 	}
@@ -246,23 +251,18 @@ const char *btf_type_c_dump(const struct btf *btf)
 	d = btf_dump__new(btf, NULL, &opts, btf_dump_printf);
 	if (libbpf_get_error(d)) {
 		fprintf(stderr, "Failed to create btf_dump instance: %ld\n", libbpf_get_error(d));
-		goto err_out;
+		return NULL;
 	}
 
 	for (i = 1; i <= btf__get_nr_types(btf); i++) {
 		err = btf_dump__dump_type(d, i);
 		if (err) {
 			fprintf(stderr, "Failed to dump type [%d]: %d\n", i, err);
-			goto err_out;
+			return NULL;
 		}
 	}
 
-	btf_dump__free(d);
 	fflush(buf_file);
 	fclose(buf_file);
 	return buf;
-err_out:
-	btf_dump__free(d);
-	fclose(buf_file);
-	return NULL;
 }
