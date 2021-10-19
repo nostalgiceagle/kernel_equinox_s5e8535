@@ -6,7 +6,7 @@
 #include <linux/extable.h>
 #include <linux/uaccess.h>
 
-int fixup_exception(struct pt_regs *regs)
+bool fixup_exception(struct pt_regs *regs)
 {
 	const struct exception_table_entry *fixup;
 	unsigned long addr;
@@ -20,8 +20,8 @@ int fixup_exception(struct pt_regs *regs)
 
 	fixup = search_exception_tables(addr);
 	if (!fixup)
-		return 0;
+		return false;
 
 	regs->pc = (unsigned long)&fixup->fixup + fixup->fixup;
-	return 1;
+	return true;
 }
