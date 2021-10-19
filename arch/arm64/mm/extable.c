@@ -6,6 +6,24 @@
 #include <linux/extable.h>
 #include <linux/uaccess.h>
 
+#include <asm/asm-extable.h>
+
+typedef bool (*ex_handler_t)(const struct exception_table_entry *,
+			     struct pt_regs *);
+
+static inline unsigned long
+get_ex_fixup(const struct exception_table_entry *ex)
+{
+	return ((unsigned long)&ex->fixup + ex->fixup);
+}
+
+static bool ex_handler_fixup(const struct exception_table_entry *ex,
+			     struct pt_regs *regs)
+{
+	regs->pc = get_ex_fixup(ex);
+	return true;
+}
+
 bool fixup_exception(struct pt_regs *regs)
 {
 	const struct exception_table_entry *fixup;
@@ -22,6 +40,12 @@ bool fixup_exception(struct pt_regs *regs)
 	if (!fixup)
 		return false;
 
-	regs->pc = (unsigned long)&fixup->fixup + fixup->fixup;
-	return true;
+	switch (ex->type) {
+	case EX_TYPE_FIXUP:
+		return ex_handler_fixup(ex, regs);
+	case EX_TYPE_BPF:
+		return ex_handler_bpf(ex, regs);
+	}
+
+	BUG();
 }
