@@ -6472,11 +6472,6 @@ BTF_TRACING_TYPE_xxx
 
 /* BTF ID set registration API for modules */
 
-struct kfunc_btf_id_list {
-	struct list_head list;
-	struct mutex mutex;
-};
-
 #ifdef CONFIG_DEBUG_INFO_BTF_MODULES
 
 void register_kfunc_btf_id_set(struct kfunc_btf_id_list *l,
@@ -6515,8 +6510,6 @@ bool bpf_check_mod_kfunc_call(struct kfunc_btf_id_list *klist, u32 kfunc_id,
 	return false;
 }
 
-#endif
-
 #define DEFINE_KFUNC_BTF_ID_LIST(name)                                         \
 	struct kfunc_btf_id_list name = { LIST_HEAD_INIT(name.list),           \
 					  __MUTEX_INITIALIZER(name.mutex) };   \
@@ -6524,6 +6517,7 @@ bool bpf_check_mod_kfunc_call(struct kfunc_btf_id_list *klist, u32 kfunc_id,
 
 DEFINE_KFUNC_BTF_ID_LIST(bpf_tcp_ca_kfunc_list);
 DEFINE_KFUNC_BTF_ID_LIST(prog_test_kfunc_list);
+#endif
 
 int bpf_core_types_are_compat(const struct btf *local_btf, __u32 local_id,
 			      const struct btf *targ_btf, __u32 targ_id)
