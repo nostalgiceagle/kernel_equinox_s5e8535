@@ -2921,7 +2921,7 @@ static int __mark_chain_precision(struct bpf_verifier_env *env, int frame, int r
 			reg->precise = true;
 		}
 		if (env->log.level & BPF_LOG_LEVEL2) {
-			verbose(env, "parent %s regs=%x stack=%llx marks\n",
+			verbose(env, "parent %s regs=%x stack=%llx marks:",
 				new_marks ? "didn't have" : "already had",
 				reg_mask, stack_mask);
 			print_verifier_state(env, func, true);
