@@ -79,7 +79,7 @@ static bool is_flex_arr(const struct btf *btf,
 		return false;
 
 	/* has to be the last member of enclosing struct */
-	t = btf__type_by_id(btf, acc->type_id);
+	t = btf_type_by_id(btf, acc->type_id);
 	return acc->idx == btf_vlen(t) - 1;
 }
 
@@ -414,7 +414,7 @@ static int bpf_core_match_member(const struct btf *local_btf,
 		return 0;
 
 	local_id = local_acc->type_id;
-	local_type = btf__type_by_id(local_btf, local_id);
+	local_type = btf_type_by_id(local_btf, local_id);
 	local_member = btf_members(local_type) + local_acc->idx;
 	local_name = btf__name_by_offset(local_btf, local_member->name_off);
 
@@ -606,7 +606,7 @@ static int bpf_core_calc_field_relo(const char *prog_name,
 		return -EUCLEAN; /* request instruction poisoning */
 
 	acc = &spec->spec[spec->len - 1];
-	t = btf__type_by_id(spec->btf, acc->type_id);
+	t = btf_type_by_id(spec->btf, acc->type_id);
 
 	/* a[n] accessor needs special handling */
 	if (!acc->name) {
@@ -709,9 +709,13 @@ static int bpf_core_calc_field_relo(const char *prog_name,
 
 static int bpf_core_calc_type_relo(const struct bpf_core_relo *relo,
 				   const struct bpf_core_spec *spec,
-				   __u32 *val)
+				   __u32 *val, bool *validate)
 {
 	__s64 sz;
+
+	/* by default, always check expected value in bpf_insn */
+	if (validate)
+		*validate = true;
 
 	/* type-based relos return zero when target type is not found */
 	if (!spec) {
@@ -722,6 +726,11 @@ static int bpf_core_calc_type_relo(const struct bpf_core_relo *relo,
 	switch (relo->kind) {
 	case BPF_CORE_TYPE_ID_TARGET:
 		*val = spec->root_type_id;
+		/* type ID, embedded in bpf_insn, might change during linking,
+		 * so enforcing it is pointless
+		 */
+		if (validate)
+			*validate = false;
 		break;
 	case BPF_CORE_TYPE_EXISTS:
 		*val = 1;
@@ -755,7 +764,7 @@ static int bpf_core_calc_enumval_relo(const struct bpf_core_relo *relo,
 	case BPF_CORE_ENUMVAL_VALUE:
 		if (!spec)
 			return -EUCLEAN; /* request instruction poisoning */
-		t = btf__type_by_id(spec->btf, spec->spec[0].type_id);
+		t = btf_type_by_id(spec->btf, spec->spec[0].type_id);
 		e = btf_enum(t) + spec->spec[0].idx;
 		*val = e->val;
 		break;
@@ -765,31 +774,6 @@ static int bpf_core_calc_enumval_relo(const struct bpf_core_relo *relo,
 
 	return 0;
 }
-
-struct bpf_core_relo_res
-{
-	/* expected value in the instruction, unless validate == false */
-	__u32 orig_val;
-	/* new value that needs to be patched up to */
-	__u32 new_val;
-	/* relocation unsuccessful, poison instruction, but don't fail load */
-	bool poison;
-	/* some relocations can't be validated against orig_val */
-	bool validate;
-	/* for field byte offset relocations or the forms:
-	 *     *(T *)(rX + <off>) = rY
-	 *     rX = *(T *)(rY + <off>),
-	 * we remember original and resolved field size to adjust direct
-	 * memory loads of pointers and integers; this is necessary for 32-bit
-	 * host kernel architectures, but also allows to automatically
-	 * relocate fields that were resized from, e.g., u32 to u64, etc.
-	 */
-	bool fail_memsz_adjust;
-	__u32 orig_sz;
-	__u32 orig_type_id;
-	__u32 new_sz;
-	__u32 new_type_id;
-};
 
 /* Calculate original and target relocation values, given local and target
  * specs and relocation kind. These values are calculated for each candidate.
@@ -831,8 +815,8 @@ static int bpf_core_calc_relo(const char *prog_name,
 		if (res->orig_sz != res->new_sz) {
 			const struct btf_type *orig_t, *new_t;
 
-			orig_t = btf__type_by_id(local_spec->btf, res->orig_type_id);
-			new_t = btf__type_by_id(targ_spec->btf, res->new_type_id);
+			orig_t = btf_type_by_id(local_spec->btf, res->orig_type_id);
+			new_t = btf_type_by_id(targ_spec->btf, res->new_type_id);
 
 			/* There are two use cases in which it's safe to
 			 * adjust load/store's mem size:
@@ -861,8 +845,8 @@ static int bpf_core_calc_relo(const char *prog_name,
 			res->fail_memsz_adjust = true;
 		}
 	} else if (core_relo_is_type_based(relo->kind)) {
-		err = bpf_core_calc_type_relo(relo, local_spec, &res->orig_val);
-		err = err ?: bpf_core_calc_type_relo(relo, targ_spec, &res->new_val);
+		err = bpf_core_calc_type_relo(relo, local_spec, &res->orig_val, &res->validate);
+		err = err ?: bpf_core_calc_type_relo(relo, targ_spec, &res->new_val, NULL);
 	} else if (core_relo_is_enumval_based(relo->kind)) {
 		err = bpf_core_calc_enumval_relo(relo, local_spec, &res->orig_val);
 		err = err ?: bpf_core_calc_enumval_relo(relo, targ_spec, &res->new_val);
@@ -942,9 +926,9 @@ static int insn_bytes_to_bpf_size(__u32 sz)
  * 5. *(T *)(rX + <off>) = rY, where T is one of {u8, u16, u32, u64};
  * 6. *(T *)(rX + <off>) = <imm>, where T is one of {u8, u16, u32, u64}.
  */
-static int bpf_core_patch_insn(const char *prog_name, struct bpf_insn *insn,
-			       int insn_idx, const struct bpf_core_relo *relo,
-			       int relo_idx, const struct bpf_core_relo_res *res)
+int bpf_core_patch_insn(const char *prog_name, struct bpf_insn *insn,
+			int insn_idx, const struct bpf_core_relo *relo,
+			int relo_idx, const struct bpf_core_relo_res *res)
 {
 	__u32 orig_val, new_val;
 	__u8 class;
@@ -1080,7 +1064,7 @@ static void bpf_core_dump_spec(const char *prog_name, int level, const struct bp
 	int i;
 
 	type_id = spec->root_type_id;
-	t = btf__type_by_id(spec->btf, type_id);
+	t = btf_type_by_id(spec->btf, type_id);
 	s = btf__name_by_offset(spec->btf, t->name_off);
 
 	libbpf_print(level, "[%u] %s %s", type_id, btf_kind_str(t), str_is_empty(s) ? "<anon>" : s);
@@ -1119,7 +1103,7 @@ static void bpf_core_dump_spec(const char *prog_name, int level, const struct bp
 }
 
 /*
- * CO-RE relocate single instruction.
+ * Calculate CO-RE relocation target result.
  *
  * The outline and important points of the algorithm:
  * 1. For given local type, find corresponding candidate target types.
@@ -1168,18 +1152,18 @@ static void bpf_core_dump_spec(const char *prog_name, int level, const struct bp
  *    between multiple relocations for the same type ID and is updated as some
  *    of the candidates are pruned due to structural incompatibility.
  */
-int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
-			     int insn_idx,
-			     const struct bpf_core_relo *relo,
-			     int relo_idx,
-			     const struct btf *local_btf,
-			     struct bpf_core_cand_list *cands,
-			     struct bpf_core_spec *specs_scratch)
+int bpf_core_calc_relo_insn(const char *prog_name,
+			    const struct bpf_core_relo *relo,
+			    int relo_idx,
+			    const struct btf *local_btf,
+			    struct bpf_core_cand_list *cands,
+			    struct bpf_core_spec *specs_scratch,
+			    struct bpf_core_relo_res *targ_res)
 {
 	struct bpf_core_spec *local_spec = &specs_scratch[0];
 	struct bpf_core_spec *cand_spec = &specs_scratch[1];
 	struct bpf_core_spec *targ_spec = &specs_scratch[2];
-	struct bpf_core_relo_res cand_res, targ_res;
+	struct bpf_core_relo_res cand_res;
 	const struct btf_type *local_type;
 	const char *local_name;
 	__u32 local_id;
@@ -1187,10 +1171,7 @@ int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
 	int i, j, err;
 
 	local_id = relo->type_id;
-	local_type = btf__type_by_id(local_btf, local_id);
-	if (!local_type)
-		return -EINVAL;
-
+	local_type = btf_type_by_id(local_btf, local_id);
 	local_name = btf__name_by_offset(local_btf, local_type->name_off);
 	if (!local_name)
 		return -EINVAL;
@@ -1216,11 +1197,13 @@ int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
 
 	/* TYPE_ID_LOCAL relo is special and doesn't need candidate search */
 	if (relo->kind == BPF_CORE_TYPE_ID_LOCAL) {
-		targ_res.validate = true;
-		targ_res.poison = false;
-		targ_res.orig_val = local_spec->root_type_id;
-		targ_res.new_val = local_spec->root_type_id;
-		goto patch_insn;
+		/* bpf_insn's imm value could get out of sync during linking */
+		memset(targ_res, 0, sizeof(*targ_res));
+		targ_res->validate = false;
+		targ_res->poison = false;
+		targ_res->orig_val = local_spec->root_type_id;
+		targ_res->new_val = local_spec->root_type_id;
+		return 0;
 	}
 
 	/* libbpf doesn't support candidate search for anonymous types */
@@ -1229,7 +1212,6 @@ int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
 			prog_name, relo_idx, core_relo_kind_str(relo->kind), relo->kind);
 		return -EOPNOTSUPP;
 	}
-
 
 	for (i = 0, j = 0; i < cands->len; i++) {
 		err = bpf_core_spec_match(local_spec, cands->cands[i].btf,
@@ -1255,7 +1237,7 @@ int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
 			return err;
 
 		if (j == 0) {
-			targ_res = cand_res;
+			*targ_res = cand_res;
 			*targ_spec = *cand_spec;
 		} else if (cand_spec->bit_offset != targ_spec->bit_offset) {
 			/* if there are many field relo candidates, they
@@ -1265,7 +1247,8 @@ int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
 				prog_name, relo_idx, cand_spec->bit_offset,
 				targ_spec->bit_offset);
 			return -EINVAL;
-		} else if (cand_res.poison != targ_res.poison || cand_res.new_val != targ_res.new_val) {
+		} else if (cand_res.poison != targ_res->poison ||
+			   cand_res.new_val != targ_res->new_val) {
 			/* all candidates should result in the same relocation
 			 * decision and value, otherwise it's dangerous to
 			 * proceed due to ambiguity
@@ -1273,7 +1256,7 @@ int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
 			pr_warn("prog '%s': relo #%d: relocation decision ambiguity: %s %u != %s %u\n",
 				prog_name, relo_idx,
 				cand_res.poison ? "failure" : "success", cand_res.new_val,
-				targ_res.poison ? "failure" : "success", targ_res.new_val);
+				targ_res->poison ? "failure" : "success", targ_res->new_val);
 			return -EINVAL;
 		}
 
@@ -1307,18 +1290,9 @@ int bpf_core_apply_relo_insn(const char *prog_name, struct bpf_insn *insn,
 			 prog_name, relo_idx);
 
 		/* calculate single target relo result explicitly */
-		err = bpf_core_calc_relo(prog_name, relo, relo_idx, local_spec, NULL, &targ_res);
+		err = bpf_core_calc_relo(prog_name, relo, relo_idx, local_spec, NULL, targ_res);
 		if (err)
 			return err;
-	}
-
-patch_insn:
-	/* bpf_core_patch_insn() should know how to handle missing targ_spec */
-	err = bpf_core_patch_insn(prog_name, insn, insn_idx, relo, relo_idx, &targ_res);
-	if (err) {
-		pr_warn("prog '%s': relo #%d: failed to patch insn #%u: %d\n",
-			prog_name, relo_idx, relo->insn_off / 8, err);
-		return -EINVAL;
 	}
 
 	return 0;
