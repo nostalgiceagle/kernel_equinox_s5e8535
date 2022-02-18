@@ -1360,7 +1360,6 @@ int generic_map_delete_batch(struct bpf_map *map,
 		err = map->ops->map_delete_elem(map, key);
 		rcu_read_unlock();
 		bpf_enable_instrumentation();
-		maybe_wait_bpf_programs(map);
 		if (err)
 			break;
 		cond_resched();
@@ -1369,6 +1368,8 @@ int generic_map_delete_batch(struct bpf_map *map,
 		err = -EFAULT;
 
 	kvfree(key);
+
+	maybe_wait_bpf_programs(map);
 	return err;
 }
 
