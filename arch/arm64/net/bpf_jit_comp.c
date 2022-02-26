@@ -1119,6 +1119,11 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 		goto out_off;
 	}
 
+	if (build_body(&ctx, extra_pass)) {
+		prog = orig_prog;
+		goto out_off;
+	}
+
 	ctx.epilogue_offset = ctx.idx;
 	build_epilogue(&ctx, was_classic);
 
