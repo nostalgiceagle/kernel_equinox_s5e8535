@@ -74,7 +74,7 @@
 	BPF_EXIT_INSN(),
 	},
 	.errstr_unpriv = "attempt to corrupt spilled",
-	.errstr = "R0 invalid mem access 'inv",
+	.errstr = "R0 invalid mem access 'scalar'",
 	.result = REJECT,
 	.flags = F_NEEDS_EFFICIENT_UNALIGNED_ACCESS,
 },
