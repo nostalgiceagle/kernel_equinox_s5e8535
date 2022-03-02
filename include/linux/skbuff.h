@@ -4003,6 +4003,14 @@ static inline ktime_t net_invalid_timestamp(void)
 	return 0;
 }
 
+static inline void skb_clear_tstamp(struct sk_buff *skb)
+{
+	if (skb->mono_delivery_time)
+		return;
+
+	skb->tstamp = 0;
+}
+
 static inline u8 skb_metadata_len(const struct sk_buff *skb)
 {
 	return skb_shinfo(skb)->meta_len;
@@ -4856,7 +4864,7 @@ static inline void skb_set_redirected(struct sk_buff *skb, bool from_ingress)
 #ifdef CONFIG_NET_REDIRECT
 	skb->from_ingress = from_ingress;
 	if (skb->from_ingress)
-		skb->tstamp = 0;
+		skb_clear_tstamp(skb);
 #endif
 }
 
