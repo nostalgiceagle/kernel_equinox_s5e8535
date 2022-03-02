@@ -100,6 +100,8 @@ static int cls_bpf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 		} else {
 			filter_res = bpf_prog_run_data_pointers(prog->filter, skb);
 		}
+		if (unlikely(!skb->tstamp && skb->mono_delivery_time))
+			skb->mono_delivery_time = 0;
 
 		if (prog->exts_integrated) {
 			res->class   = 0;
