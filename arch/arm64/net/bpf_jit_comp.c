@@ -243,7 +243,8 @@ static bool is_lsi_offset(int offset, int scale)
 }
 
 /* Tail call offset to jump into */
-#if IS_ENABLED(CONFIG_ARM64_BTI_KERNEL)
+#if IS_ENABLED(CONFIG_ARM64_BTI_KERNEL) || \
+	IS_ENABLED(CONFIG_ARM64_PTR_AUTH_KERNEL)
 #define PROLOGUE_OFFSET 9
 #else
 #define PROLOGUE_OFFSET 8
@@ -285,8 +286,11 @@ static int build_prologue(struct jit_ctx *ctx, bool ebpf_from_cbpf)
 	 *
 	 */
 
+	/* Sign lr */
+	if (IS_ENABLED(CONFIG_ARM64_PTR_AUTH_KERNEL))
+		emit(A64_PACIASP, ctx);
 	/* BTI landing pad */
-	if (IS_ENABLED(CONFIG_ARM64_BTI_KERNEL))
+	else if (IS_ENABLED(CONFIG_ARM64_BTI_KERNEL))
 		emit(A64_BTI_C, ctx);
 
 	/* Save FP and LR registers to stay align with ARM64 AAPCS */
@@ -633,6 +637,10 @@ static void build_epilogue(struct jit_ctx *ctx, bool was_classic)
 
 	/* Move the return value from bpf:r0 (aka x7) to x0 */
 	emit(A64_MOV(1, A64_R(0), r0), ctx);
+
+	/* Authenticate lr */
+	if (IS_ENABLED(CONFIG_ARM64_PTR_AUTH_KERNEL))
+		emit(A64_AUTIASP, ctx);
 
 	emit(A64_RET(A64_LR), ctx);
 }
