@@ -1431,9 +1431,6 @@ int bpf_prog_test_run_flow_dissector(struct bpf_prog *prog,
 	void *data;
 	int ret;
 
-	if (prog->type != BPF_PROG_TYPE_FLOW_DISSECTOR)
-		return -EINVAL;
-
 	if (kattr->test.flags || kattr->test.cpu || kattr->test.batch_size)
 		return -EINVAL;
 
@@ -1497,9 +1494,6 @@ int bpf_prog_test_run_sk_lookup(struct bpf_prog *prog, const union bpf_attr *kat
 	struct bpf_sk_lookup *user_ctx;
 	u32 retval, duration;
 	int ret = -EINVAL;
-
-	if (prog->type != BPF_PROG_TYPE_SK_LOOKUP)
-		return -EINVAL;
 
 	if (kattr->test.flags || kattr->test.cpu || kattr->test.batch_size)
 		return -EINVAL;
