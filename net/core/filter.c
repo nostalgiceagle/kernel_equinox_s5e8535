@@ -6659,6 +6659,7 @@ __bpf_skc_lookup(struct sk_buff *skb, struct bpf_sock_tuple *tuple, u32 len,
 	struct sock *sk = NULL;
 	struct net *net;
 	u8 family;
+	int sdif;
 
 	if (len == sizeof(tuple->ipv4))
 		family = AF_INET;
