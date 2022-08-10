@@ -119,7 +119,7 @@ static struct bpf_ringbuf *bpf_ringbuf_area_alloc(size_t data_sz, int numa_node)
 err_free_pages:
 	for (i = 0; i < nr_pages; i++)
 		__free_page(pages[i]);
-	kvfree(pages);
+	bpf_map_area_free(pages);
 	return NULL;
 }
 
@@ -196,7 +196,7 @@ static void bpf_ringbuf_free(struct bpf_ringbuf *rb)
 	vunmap(rb);
 	for (i = 0; i < nr_pages; i++)
 		__free_page(pages[i]);
-	kvfree(pages);
+	bpf_map_area_free(pages);
 }
 
 static void ringbuf_map_free(struct bpf_map *map)
