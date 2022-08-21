@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-#define _GNU_SOURCE
 #include <test_progs.h>
 #include <network_helpers.h>
 #include <error.h>
@@ -14,8 +13,9 @@
 #endif
 
 #define CHECK_FLOW_KEYS(desc, got, expected)				\
-	CHECK_ATTR(memcmp(&got, &expected, sizeof(got)) != 0,		\
+	_CHECK(memcmp(&got, &expected, sizeof(got)) != 0,		\
 	      desc,							\
+	      topts.duration,						\
 	      "nhoff=%u/%u "						\
 	      "thoff=%u/%u "						\
 	      "addr_proto=0x%x/0x%x "					\
@@ -100,6 +100,7 @@ struct test {
 	} pkt;
 	struct bpf_flow_keys keys;
 	__u32 flags;
+	__u32 retval;
 };
 
 #define VLAN_HLEN	4
@@ -126,6 +127,7 @@ struct test tests[] = {
 			.sport = 80,
 			.dport = 8080,
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipv6",
@@ -146,6 +148,7 @@ struct test tests[] = {
 			.sport = 80,
 			.dport = 8080,
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "802.1q-ipv4",
@@ -168,6 +171,7 @@ struct test tests[] = {
 			.sport = 80,
 			.dport = 8080,
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "802.1ad-ipv6",
@@ -191,6 +195,7 @@ struct test tests[] = {
 			.sport = 80,
 			.dport = 8080,
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipv4-frag",
@@ -217,6 +222,7 @@ struct test tests[] = {
 			.dport = 8080,
 		},
 		.flags = BPF_FLOW_DISSECTOR_F_PARSE_1ST_FRAG,
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipv4-no-frag",
@@ -239,6 +245,7 @@ struct test tests[] = {
 			.is_frag = true,
 			.is_first_frag = true,
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipv6-frag",
@@ -265,6 +272,7 @@ struct test tests[] = {
 			.dport = 8080,
 		},
 		.flags = BPF_FLOW_DISSECTOR_F_PARSE_1ST_FRAG,
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipv6-no-frag",
@@ -287,6 +295,7 @@ struct test tests[] = {
 			.is_frag = true,
 			.is_first_frag = true,
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipv6-flow-label",
@@ -309,6 +318,7 @@ struct test tests[] = {
 			.dport = 8080,
 			.flow_label = __bpf_constant_htonl(0xbeeef),
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipv6-no-flow-label",
@@ -331,6 +341,7 @@ struct test tests[] = {
 			.flow_label = __bpf_constant_htonl(0xbeeef),
 		},
 		.flags = BPF_FLOW_DISSECTOR_F_STOP_AT_FLOW_LABEL,
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipip-encap",
@@ -359,6 +370,7 @@ struct test tests[] = {
 			.sport = 80,
 			.dport = 8080,
 		},
+		.retval = BPF_OK,
 	},
 	{
 		.name = "ipip-no-encap",
@@ -386,6 +398,7 @@ struct test tests[] = {
 			.is_encap = true,
 		},
 		.flags = BPF_FLOW_DISSECTOR_F_STOP_AT_ENCAP,
+		.retval = BPF_OK,
 	},
 };
 
@@ -458,10 +471,10 @@ static int init_prog_array(struct bpf_object *obj, struct bpf_map *prog_array)
 	if (map_fd < 0)
 		return -1;
 
-	for (i = 0; i < bpf_map__def(prog_array)->max_entries; i++) {
-		snprintf(prog_name, sizeof(prog_name), "flow_dissector/%i", i);
+	for (i = 0; i < bpf_map__max_entries(prog_array); i++) {
+		snprintf(prog_name, sizeof(prog_name), "flow_dissector_%d", i);
 
-		prog = bpf_object__find_program_by_title(obj, prog_name);
+		prog = bpf_object__find_program_by_name(obj, prog_name);
 		if (!prog)
 			return -1;
 
@@ -488,7 +501,7 @@ static void run_tests_skb_less(int tap_fd, struct bpf_map *keys)
 		/* Keep in sync with 'flags' from eth_get_headlen. */
 		__u32 eth_get_headlen_flags =
 			BPF_FLOW_DISSECTOR_F_PARSE_1ST_FRAG;
-		struct bpf_prog_test_run_attr tattr = {};
+		LIBBPF_OPTS(bpf_test_run_opts, topts);
 		struct bpf_flow_keys flow_keys = {};
 		__u32 key = (__u32)(tests[i].keys.sport) << 16 |
 			    tests[i].keys.dport;
@@ -503,14 +516,17 @@ static void run_tests_skb_less(int tap_fd, struct bpf_map *keys)
 		err = tx_tap(tap_fd, &tests[i].pkt, sizeof(tests[i].pkt));
 		CHECK(err < 0, "tx_tap", "err %d errno %d\n", err, errno);
 
-		err = bpf_map_lookup_elem(keys_fd, &key, &flow_keys);
-		CHECK_ATTR(err, tests[i].name, "bpf_map_lookup_elem %d\n", err);
+		/* check the stored flow_keys only if BPF_OK expected */
+		if (tests[i].retval != BPF_OK)
+			continue;
 
-		CHECK_ATTR(err, tests[i].name, "skb-less err %d\n", err);
+		err = bpf_map_lookup_elem(keys_fd, &key, &flow_keys);
+		ASSERT_OK(err, "bpf_map_lookup_elem");
+
 		CHECK_FLOW_KEYS(tests[i].name, flow_keys, tests[i].keys);
 
 		err = bpf_map_delete_elem(keys_fd, &key);
-		CHECK_ATTR(err, tests[i].name, "bpf_map_delete_elem %d\n", err);
+		ASSERT_OK(err, "bpf_map_delete_elem");
 	}
 }
 
@@ -574,27 +590,28 @@ void test_flow_dissector(void)
 
 	for (i = 0; i < ARRAY_SIZE(tests); i++) {
 		struct bpf_flow_keys flow_keys;
-		struct bpf_prog_test_run_attr tattr = {
-			.prog_fd = prog_fd,
+		LIBBPF_OPTS(bpf_test_run_opts, topts,
 			.data_in = &tests[i].pkt,
 			.data_size_in = sizeof(tests[i].pkt),
 			.data_out = &flow_keys,
-		};
+		);
 		static struct bpf_flow_keys ctx = {};
 
 		if (tests[i].flags) {
-			tattr.ctx_in = &ctx;
-			tattr.ctx_size_in = sizeof(ctx);
+			topts.ctx_in = &ctx;
+			topts.ctx_size_in = sizeof(ctx);
 			ctx.flags = tests[i].flags;
 		}
 
-		err = bpf_prog_test_run_xattr(&tattr);
-		CHECK_ATTR(tattr.data_size_out != sizeof(flow_keys) ||
-			   err || tattr.retval != 1,
-			   tests[i].name,
-			   "err %d errno %d retval %d duration %d size %u/%zu\n",
-			   err, errno, tattr.retval, tattr.duration,
-			   tattr.data_size_out, sizeof(flow_keys));
+		err = bpf_prog_test_run_opts(prog_fd, &topts);
+		ASSERT_OK(err, "test_run");
+		ASSERT_EQ(topts.retval, tests[i].retval, "test_run retval");
+
+		/* check the resulting flow_keys only if BPF_OK returned */
+		if (topts.retval != BPF_OK)
+			continue;
+		ASSERT_EQ(topts.data_size_out, sizeof(flow_keys),
+			  "test_run data_size_out");
 		CHECK_FLOW_KEYS(tests[i].name, flow_keys, tests[i].keys);
 	}
 
