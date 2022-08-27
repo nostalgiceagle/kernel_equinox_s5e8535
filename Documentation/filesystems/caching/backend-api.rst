@@ -67,7 +67,36 @@ pointer to the cache definition::
 
 	void fscache_withdraw_cache(struct fscache_cache *cache);
 
-In CacheFS's case, this is called by put_super().
+
+This moves the cache to the withdrawn state to prevent new cache- and
+volume-level accesses from starting and then waits for outstanding cache-level
+accesses to complete.
+
+The cache must then go through the data storage objects it has and tell fscache
+to withdraw them, calling::
+
+	void fscache_withdraw_cookie(struct fscache_cookie *cookie);
+
+on the cookie that each object belongs to.  This schedules the specified cookie
+for withdrawal.  This gets offloaded to a workqueue.  The cache backend can
+wait for completion by calling::
+
+	void fscache_wait_for_objects(struct fscache_cache *cache);
+
+Once all the cookies are withdrawn, a cache backend can withdraw all the
+volumes, calling::
+
+	void fscache_withdraw_volume(struct fscache_volume *volume);
+
+to tell fscache that a volume has been withdrawn.  This waits for all
+outstanding accesses on the volume to complete before returning.
+
+When the cache is completely withdrawn, fscache should be notified by
+calling::
+
+	void fscache_relinquish_cache(struct fscache_cache *cache);
+
+to clear fields in the cookie and discard the caller's ref on it.
 
 
 Security
