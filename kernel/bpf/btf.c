@@ -1394,7 +1394,6 @@ __printf(4, 5) static void __btf_verifier_log_type(struct btf_verifier_env *env,
 						   const char *fmt, ...)
 {
 	struct bpf_verifier_log *log = &env->log;
-	u8 kind = BTF_INFO_KIND(t->info);
 	struct btf *btf = env->btf;
 	va_list args;
 
@@ -1416,7 +1415,7 @@ __printf(4, 5) static void __btf_verifier_log_type(struct btf_verifier_env *env,
 
 	__btf_verifier_log(log, "[%u] %s %s%s",
 			   env->log_type_id,
-			   btf_kind_str[kind],
+			   btf_type_str(t),
 			   __btf_name_by_offset(btf, t->name_off),
 			   log_details ? " " : "");
 
@@ -5452,7 +5451,7 @@ bool btf_ctx_access(int off, int size, enum bpf_access_type type,
 			if (!btf_type_is_small_int(t)) {
 				bpf_log(log,
 					"ret type %s not allowed for fmod_ret\n",
-					btf_kind_str[BTF_INFO_KIND(t->info)]);
+					btf_type_str(t));
 				return false;
 			}
 			break;
@@ -5479,7 +5478,7 @@ bool btf_ctx_access(int off, int size, enum bpf_access_type type,
 			"func '%s' arg%d '%s' has type %s. Only pointer access is allowed\n",
 			tname, arg,
 			__btf_name_by_offset(btf, t->name_off),
-			btf_kind_str[BTF_INFO_KIND(t->info)]);
+			btf_type_str(t));
 		return false;
 	}
 
@@ -5563,11 +5562,11 @@ bool btf_ctx_access(int off, int size, enum bpf_access_type type,
 	if (!btf_type_is_struct(t)) {
 		bpf_log(log,
 			"func '%s' arg%d type %s is not a struct\n",
-			tname, arg, btf_kind_str[BTF_INFO_KIND(t->info)]);
+			tname, arg, btf_type_str(t));
 		return false;
 	}
 	bpf_log(log, "func '%s' arg%d has btf_id %d type %s '%s'\n",
-		tname, arg, info->btf_id, btf_kind_str[BTF_INFO_KIND(t->info)],
+		tname, arg, info->btf_id, btf_type_str(t),
 		__btf_name_by_offset(btf, t->name_off));
 	return true;
 }
@@ -5975,7 +5974,7 @@ int btf_distill_func_proto(struct bpf_verifier_log *log,
 	if (ret < 0 || __btf_type_is_struct(t)) {
 		bpf_log(log,
 			"The function %s return type %s is unsupported.\n",
-			tname, btf_kind_str[BTF_INFO_KIND(t->info)]);
+			tname, btf_type_str(t));
 		return -EINVAL;
 	}
 	m->ret_size = ret;
@@ -5993,7 +5992,7 @@ int btf_distill_func_proto(struct bpf_verifier_log *log,
 		if (ret < 0 || ret > 16) {
 			bpf_log(log,
 				"The function %s arg%d type %s is unsupported.\n",
-				tname, i, btf_kind_str[BTF_INFO_KIND(t->info)]);
+				tname, i, btf_type_str(t));
 			return -EINVAL;
 		}
 		if (ret == 0) {
@@ -6753,7 +6752,7 @@ int btf_prepare_func_args(struct bpf_verifier_env *env, int subprog,
 			continue;
 		}
 		bpf_log(log, "Arg#%d type %s in %s() is not supported yet.\n",
-			i, btf_kind_str[BTF_INFO_KIND(t->info)], tname);
+			i, btf_type_str(t), tname);
 		return -EINVAL;
 	}
 	return 0;
