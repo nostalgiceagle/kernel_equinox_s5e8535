@@ -2055,6 +2055,8 @@ static inline bool has_current_bpf_ctx(void)
 {
 	return !!current->bpf_ctx;
 }
+
+void notrace bpf_prog_inc_misses_counter(struct bpf_prog *prog);
 #else /* !CONFIG_BPF_SYSCALL */
 static inline struct bpf_prog *bpf_prog_get(u32 ufd)
 {
@@ -2276,6 +2278,10 @@ static inline bool unprivileged_ebpf_enabled(void)
 static inline bool has_current_bpf_ctx(void)
 {
 	return false;
+}
+
+static inline void bpf_prog_inc_misses_counter(struct bpf_prog *prog)
+{
 }
 #endif /* CONFIG_BPF_SYSCALL */
 
