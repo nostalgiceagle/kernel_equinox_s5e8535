@@ -71,7 +71,6 @@
 
 static struct bpf_map *bpf_object__add_map(struct bpf_object *obj);
 static bool prog_is_subprog(const struct bpf_object *obj, const struct bpf_program *prog);
-
 static int __base_pr(enum libbpf_print_level level, const char *format,
 		     va_list args)
 {
