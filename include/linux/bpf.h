@@ -27,6 +27,7 @@
 #include <linux/bpfptr.h>
 #include <linux/btf.h>
 #include <linux/rcupdate_trace.h>
+#include <linux/init.h>
 #include <linux/android_kabi.h>
 
 struct bpf_verifier_env;
@@ -980,6 +981,8 @@ struct bpf_trampoline *bpf_trampoline_get(u64 key,
 					  struct bpf_attach_target_info *tgt_info);
 void bpf_trampoline_put(struct bpf_trampoline *tr);
 int arch_prepare_bpf_dispatcher(void *image, void *buf, s64 *funcs, int num_funcs);
+int __init bpf_arch_init_dispatcher_early(void *ip);
+
 #define BPF_DISPATCHER_INIT(_name) {				\
 	.mutex = __MUTEX_INITIALIZER(_name.mutex),		\
 	.func = &_name##_func,					\
@@ -992,6 +995,13 @@ int arch_prepare_bpf_dispatcher(void *image, void *buf, s64 *funcs, int num_func
 		.lnode = LIST_HEAD_INIT(_name.ksym.lnode),	\
 	},							\
 }
+
+#define BPF_DISPATCHER_INIT_CALL(_name)					\
+	static int __init _name##_init(void)				\
+	{								\
+		return bpf_arch_init_dispatcher_early(_name##_func);	\
+	}								\
+	early_initcall(_name##_init)
 
 #ifdef CONFIG_X86_64
 #define BPF_DISPATCHER_ATTRIBUTES __attribute__((patchable_function_entry(5)))
@@ -1010,7 +1020,9 @@ int arch_prepare_bpf_dispatcher(void *image, void *buf, s64 *funcs, int num_func
 	}								\
 	EXPORT_SYMBOL(bpf_dispatcher_##name##_func);			\
 	struct bpf_dispatcher bpf_dispatcher_##name =			\
-		BPF_DISPATCHER_INIT(bpf_dispatcher_##name);
+		BPF_DISPATCHER_INIT(bpf_dispatcher_##name);		\
+	BPF_DISPATCHER_INIT_CALL(bpf_dispatcher_##name);
+
 #define DECLARE_BPF_DISPATCHER(name)					\
 	unsigned int bpf_dispatcher_##name##_func(			\
 		const void *ctx,					\
