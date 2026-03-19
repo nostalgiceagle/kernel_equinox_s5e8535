@@ -9,6 +9,7 @@
 #include <linux/refcount.h>
 #include <linux/compat.h>
 #include <linux/skbuff.h>
+#include <linux/bpf.h>
 #include <linux/linkage.h>
 #include <linux/printk.h>
 #include <linux/workqueue.h>
